@@ -1,0 +1,62 @@
+diff --git a/src/core/nativecall.c b/src/core/nativecall.c
+index 6fbbc14c5..832c15467 100644
+--- a/src/core/nativecall.c
++++ b/src/core/nativecall.c
+@@ -409,12 +409,22 @@ void init_c_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *node,
+     node->u.call.rv_idx = -1;
+ }
+ 
+-void init_box_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *box_rv_node, void *func_ptr, MVMint16 restype, MVMint16 dst) {
++void init_box_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *box_rv_node, void *func_ptr, MVMint16 restype, MVMint16 dst, MVMint16 ret_type) {
+     MVMJitCallArg args[] = { { MVM_JIT_INTERP_VAR , { MVM_JIT_INTERP_TC } },
+                              { MVM_JIT_REG_DYNIDX, { 2 } },
+                              { MVM_JIT_SAVED_RV, { 0 } }};
+     init_c_call_node(tc, sg, box_rv_node, func_ptr, 3, args);
+     box_rv_node->next = NULL;
++
++    if (ret_type == MVM_NATIVECALL_ARG_CHAR)
++        args[2].v.lit_i64 |= sizeof(char) << 16;
++    else if(ret_type == MVM_NATIVECALL_ARG_SHORT)
++        args[2].v.lit_i64 |= sizeof(short) << 16;
++    else if (ret_type == MVM_NATIVECALL_ARG_INT)
++        args[2].v.lit_i64 |= sizeof(int) << 16;
++    else if (ret_type == MVM_NATIVECALL_ARG_LONG)
++        args[2].v.lit_i64 |= sizeof(long) << 16;
++
+     if (dst == -1) {
+         box_rv_node->u.call.rv_mode = MVM_JIT_RV_DYNIDX;
+         box_rv_node->u.call.rv_idx = 0;
+@@ -561,10 +571,10 @@ MVMJitGraph *MVM_nativecall_jit_graph_for_caller_code(
+         || body->ret_type == MVM_NATIVECALL_ARG_LONGLONG
+         || body->ret_type == MVM_NATIVECALL_ARG_ULONGLONG
+     ) {
+-        init_box_call_node(tc, sg, box_rv_node, &MVM_nativecall_make_int, restype, dst);
++        init_box_call_node(tc, sg, box_rv_node, &MVM_nativecall_make_int, restype, dst, body->ret_type);
+     }
+     else if (body->ret_type == MVM_NATIVECALL_ARG_CPOINTER) {
+-        init_box_call_node(tc, sg, box_rv_node, &MVM_nativecall_make_cpointer, restype, dst);
++        init_box_call_node(tc, sg, box_rv_node, &MVM_nativecall_make_cpointer, restype, dst, body->ret_type);
+     }
+     else if (body->ret_type == MVM_NATIVECALL_ARG_UTF8STR) {
+         MVMJitCallArg args[] = { { MVM_JIT_INTERP_VAR , { MVM_JIT_INTERP_TC } },
+diff --git a/src/jit/x64/emit.dasc b/src/jit/x64/emit.dasc
+index 80afc2f31..605577d52 100644
+--- a/src/jit/x64/emit.dasc
++++ b/src/jit/x64/emit.dasc
+@@ -1956,7 +1956,15 @@ static void load_call_arg(MVMThreadContext *tc, MVMJitCompiler *compiler, MVMJit
+         | lea TMP6, [=>(arg.v.lit_i64)];
+         break;
+     case MVM_JIT_SAVED_RV:
+-        | mov TMP6, [rbp-(0x28+arg.v.lit_i64*8)];
++        switch (arg.v.lit_i64 >> 16) {
++        case 1: /* no break as we need to do all of the following instructions */
++            | cbw
++        case 2:
++            | cwde
++        case 4:
++            | cdqe
++        }
++        | mov TMP6, [rbp-(0x28+(arg.v.lit_i64 & 0xFFFF)*8)];
+         break;
+     case MVM_JIT_ARG_I64:
+         | mov TMP6, TC->cur_frame;
