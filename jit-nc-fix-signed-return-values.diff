@@ -1,16 +1,16 @@
 diff --git a/src/core/nativecall.c b/src/core/nativecall.c
-index 6fbbc14c5..832c15467 100644
+index 3a084cb..6144ff0 100644
 --- a/src/core/nativecall.c
 +++ b/src/core/nativecall.c
-@@ -409,12 +409,22 @@ void init_c_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *node,
-     node->u.call.rv_idx = -1;
+@@ -414,12 +414,22 @@ void save_rv_to_stack(MVMThreadContext *tc, MVMJitNode *node, MVMint32 storage_p
+     node->u.call.rv_idx = storage_pos;
  }
  
 -void init_box_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *box_rv_node, void *func_ptr, MVMint16 restype, MVMint16 dst) {
 +void init_box_call_node(MVMThreadContext *tc, MVMSpeshGraph *sg, MVMJitNode *box_rv_node, void *func_ptr, MVMint16 restype, MVMint16 dst, MVMint16 ret_type) {
      MVMJitCallArg args[] = { { MVM_JIT_INTERP_VAR , { MVM_JIT_INTERP_TC } },
                               { MVM_JIT_REG_DYNIDX, { 2 } },
-                              { MVM_JIT_SAVED_RV, { 0 } }};
+                              { MVM_JIT_STACK_VALUE, { 0 } }};
      init_c_call_node(tc, sg, box_rv_node, func_ptr, 3, args);
      box_rv_node->next = NULL;
 +
@@ -26,7 +26,7 @@ index 6fbbc14c5..832c15467 100644
      if (dst == -1) {
          box_rv_node->u.call.rv_mode = MVM_JIT_RV_DYNIDX;
          box_rv_node->u.call.rv_idx = 0;
-@@ -561,10 +571,10 @@ MVMJitGraph *MVM_nativecall_jit_graph_for_caller_code(
+@@ -556,10 +566,10 @@ MVMJitGraph *MVM_nativecall_jit_graph_for_caller_code(
          || body->ret_type == MVM_NATIVECALL_ARG_LONGLONG
          || body->ret_type == MVM_NATIVECALL_ARG_ULONGLONG
      ) {
@@ -40,13 +40,13 @@ index 6fbbc14c5..832c15467 100644
      else if (body->ret_type == MVM_NATIVECALL_ARG_UTF8STR) {
          MVMJitCallArg args[] = { { MVM_JIT_INTERP_VAR , { MVM_JIT_INTERP_TC } },
 diff --git a/src/jit/x64/emit.dasc b/src/jit/x64/emit.dasc
-index 80afc2f31..605577d52 100644
+index cb38f69..ea3ae6b 100644
 --- a/src/jit/x64/emit.dasc
 +++ b/src/jit/x64/emit.dasc
-@@ -1956,7 +1956,15 @@ static void load_call_arg(MVMThreadContext *tc, MVMJitCompiler *compiler, MVMJit
-         | lea TMP6, [=>(arg.v.lit_i64)];
+@@ -2099,7 +2099,15 @@ static void load_call_arg(MVMThreadContext *tc, MVMJitCompiler *compiler, MVMJit
+         | get_spesh_slot TMP6, arg.v.lit_i64;
          break;
-     case MVM_JIT_SAVED_RV:
+     case MVM_JIT_STACK_VALUE:
 -        | mov TMP6, [rbp-(0x28+arg.v.lit_i64*8)];
 +        switch (arg.v.lit_i64 >> 16) {
 +        case 1: /* no break as we need to do all of the following instructions */
@@ -58,5 +58,5 @@ index 80afc2f31..605577d52 100644
 +        }
 +        | mov TMP6, [rbp-(0x28+(arg.v.lit_i64 & 0xFFFF)*8)];
          break;
-     case MVM_JIT_ARG_I64:
-         | mov TMP6, TC->cur_frame;
+     default:
+         MVM_oops(tc, "JIT: Unknown JIT argument type %d", arg.type);
