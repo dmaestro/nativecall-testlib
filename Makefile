@@ -15,3 +15,6 @@ sizes: sizes.c
 
 clean:
 	rm -vf int32.o int64.o int_ssize.o libints$(LIBEXT) sizes
+
+test: all
+	LD_LIBRARY_PATH=. perl6 decr_zero.pl6
